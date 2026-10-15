@@ -1,7 +1,5 @@
 PARASCHIV SILVIA 3222CC
 
-Pe local si masina de pcom imi da 100, dar pe moodle 65.
-
 Am implementat un protocol de transport peste UDP. Protocolul folosește socket-uri UDP și trimite datele cu sendto / recvfrom.
 Deoarece UDP nu garantează că pachetele ajung la destinație, că ajung în ordine sau că nu se pierd, am adăugat în protocol mecanisme pentru controlul transferului: numere de secvență, ACK-uri, checksum, retransmisie și ferestre de transmisie/recepție.
 
