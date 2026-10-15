@@ -1,0 +1,50 @@
+PARASCHIV SILVIA 3222CC
+
+Pe local si masina de pcom imi da 100, dar pe moodle 65.
+
+Am implementat un protocol de transport peste UDP. Protocolul folosește socket-uri UDP și trimite datele cu sendto / recvfrom.
+Deoarece UDP nu garantează că pachetele ajung la destinație, că ajung în ordine sau că nu se pierd, am adăugat în protocol mecanisme pentru controlul transferului: numere de secvență, ACK-uri, checksum, retransmisie și ferestre de transmisie/recepție.
+
+Protocolul folosește patru tipuri de mesaje:
+- SYN - pentru inițierea conexiunii
+- SYN_ACK - răspunsul receiverului la cererea de conexiune
+- ACK - confirmare pentru datele primite
+- DATA - segment care conține date din fisier
+
+Conexiunea este stabilită printr-un mecanism asemănător cu Three Way Handshake. Sender-ul trimite SYN, receiver-ul răspunde cu SYN_ACK, iar apoi sender-ul trimite ACK. După acest pas, conexiunea este stabilită.
+
+Fiecare conexiune primește un conn_id, folosit pentru a separa datele care aparțin unor conexiuni diferite. În felul acesta, implementarea poate funcționa cu mai multe conexiuni în același timp.
+
+Datele transmise de aplicație sunt împărțite în segmente. Fiecare segment conține: un header, un checksum, payload-ul efectiv.
+
+În header se află informații precum tipul mesajului, identificatorul conexiunii, numărul de secvență și lungimea datelor. Numărul de secvență este important deoarece receiverul îl folosește ca să pună segmentele în ordinea corectă și să observe dacă lipsește vreun segment.
+
+Checksum-ul este calculat înainte de trimitere și este pus în segment. La primire, receiverul calculează din nou checksum-ul pentru datele primite și îl compară cu cel din pachet. Dacă valorile sunt diferite, înseamnă că segmentul a fost corupt, așa că este ignorat.
+
+SENDER:
+
+Funcția init_sender primește viteza și delay-ul link-ului. Aceste valori sunt folosite pentru a calcula o fereastră de transmisie. Sender-ul poate trimite mai multe segmente fără să aștepte ACK după fiecare segment, folosind mai eficient link-ul.
+Funcția setup_connection realizează handshake-ul cu receiver-ul.
+Funcția send_data trimite datele aplicației. Aceasta este neblocantă: dacă există spațiu în fereastra internă, datele sunt segmentate și trimise; dacă nu mai există spațiu, funcția întoarce -1.
+Segmentele trimise, dar încă neconfirmate, sunt salvate în send_window, iar numerele lor de secvență sunt salvate în send_window_seq.
+Când sender-ul primește un ACK, verifică până unde au fost primite corect datele. Un ACK cu valoarea x înseamnă că toate segmentele cu număr de secvență mai mic decât x au fost primite corect. Aceste segmente sunt eliminate din fereastra sender-ului.
+Dacă apare timeout și există segmente neconfirmate, senderul retransmite segmentele rămase în fereastră.
+
+RECEIVER: 
+
+Receiver-ul folosește o fereastră glisantă pentru recepție. Aceasta pornește de la segmentul indicat de expected_seq, adică primul segment care lipsește și care trebuie primit pentru ca datele să poată fi livrate mai departe aplicației.
+Dacă primește segmentul așteptat, îl poate muta în bufferul de receptie si apoi verifică dacă mai există segmente consecutive salvate anterior. În acest caz, fereastra glisează mai departe, iar expected_seq este actualizat. 
+Dacă primește un segment cu un număr de secvență mai mare, îl salvează temporar în out_of_order.
+Datele care sunt gata de livrat aplicației sunt puse în recv_buffer. Funcția recv_data citește date din acest buffer și se blochează până când există date disponibile.
+Receiverul trimite mereu ACK pentru expected_seq, adică pentru primul segment pe care încă îl așteaptă.
+
+Dacă un segment se pierde, receiver-ul continuă să trimită același ACK, iar sender-ul retransmite segmentele neconfirmate după timeout. Dacă segmentele ajung în altă ordine, receiver-ul le păstrează temporar și le livrează aplicației doar atunci când toate segmentele anterioare au fost primite.
+
+Folosirea ferestrei face protocolul mai eficient decât o abordare simplă de tip stop-and-wait.
+
+
+Protocolul poate lucra cu mai multe conexiuni în același timp.
+Pentru fiecare conexiune se creează un conn_id. Acest identificator este pus în segmente, ca să se știe de la ce conexiune vin datele.
+Fiecare conexiune are informațiile ei separate, cum ar fi socket-ul, adresa celuilalt capăt, bufferul de date și numerele de secvență.
+Astfel, dacă există mai mulți clienți sau mai multe transferuri, protocolul poate trata fiecare conexiune separat și nu amestecă datele între ele.
+
